@@ -1,0 +1,98 @@
+# .github/workflows/build-apk.yml
+#
+# 저장소 구조
+#   .github/workflows/build-apk.yml   ← 이 파일
+#   capacitor.config.json             ← 앱 이름 / 패키지 ID
+#   www/index.html                    ← 게임 HTML (파일명 반드시 index.html)
+#
+# Actions 탭 → Build APK → Run workflow 를 누르면 빌드가 돌고,
+# 끝나면 실행 화면 아래 Artifacts 에서 APK 를 내려받을 수 있습니다.
+
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: www/index.html 존재 확인
+        run: |
+          test -f www/index.html || { echo "www/index.html 이 없습니다."; exit 1; }
+          test -f capacitor.config.json || { echo "capacitor.config.json 이 없습니다."; exit 1; }
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: JDK 21 설치
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Android SDK 설치
+        uses: android-actions/setup-android@v3
+
+      - name: Capacitor 설치
+        run: |
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund \
+            @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+
+      - name: 안드로이드 프로젝트 생성
+        run: npx cap add android
+
+      - name: 웹 자산 동기화
+        run: npx cap sync android
+
+      - name: 세로 모드 고정 + 전체화면
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i 's#android:name="\.MainActivity"#android:name=".MainActivity" android:screenOrientation="portrait"#' $MANIFEST
+          grep -q screenOrientation $MANIFEST && echo "세로 고정 적용됨"
+
+      - name: 디버그 APK 빌드
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: 릴리스 APK 빌드 (서명 없음)
+        run: |
+          cd android
+          ./gradlew assembleRelease --no-daemon || echo "release 빌드 생략"
+
+      - name: APK 이름 정리
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/BottleFlip-debug.apk
+          if [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk out/BottleFlip-release-unsigned.apk
+          fi
+          ls -lh out
+
+      - name: APK 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: BottleFlip-apk
+          path: out/*.apk
+          retention-days: 30
+
+      # 태그(v1.0.0 같은)를 밀면 Releases 에도 자동으로 올라갑니다.
+      - name: 릴리스에 첨부
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.apk

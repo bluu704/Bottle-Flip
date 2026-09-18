@@ -1,0 +1,13 @@
+{
+  "appId": "com.bottleflip.game",
+  "appName": "Bottle Flip",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#cfe0f7"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
